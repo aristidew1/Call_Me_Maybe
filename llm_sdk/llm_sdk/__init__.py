@@ -80,6 +80,25 @@ class Small_LLM_Model:
         return torch.tensor([ids], device=self._device, dtype=torch.long)
 
 
+    def encode_chat(self, messages: list[dict], enable_thinking: bool = False) -> torch.Tensor:
+        """Apply the tokenizer chat template and encode the resulting prompt."""
+        try:
+            text = self._tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=enable_thinking,
+            )
+        except TypeError:
+            text = self._tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        ids = self._tokenizer.encode(text, add_special_tokens=False)
+        return torch.tensor([ids], device=self._device, dtype=torch.long)
+
+
     def decode(self, ids: torch.Tensor | list[int]) -> str:
         """Inverse of :py:meth:`encode`. Removes special tokens."""
         if isinstance(ids, torch.Tensor):
