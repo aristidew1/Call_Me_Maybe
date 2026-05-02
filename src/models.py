@@ -6,6 +6,7 @@ class ParameterDef(BaseModel):
     """Definition of a parameter or return type of a function."""
 
     type: Literal["number", "string", "boolean"]
+    max_tokens: int = 20
 
 
 class FunctionDef(BaseModel):

@@ -20,8 +20,12 @@ TYPE_MAP = {
 }
 
 
+# Parameters whose values are typically short (regex patterns, keywords, etc.)
+SHORT_PARAMS = {"regex", "replacement", "encoding", "database", "name"}
+
 class ParameterInfo(BaseModel):
     type: str
+    max_tokens: int = 20
 
 
 class FunctionInfo(BaseModel):
@@ -57,7 +61,8 @@ def extract_function_info(fn: Callable) -> FunctionInfo:
         if arg_name in type_hints:
             type_raw = type_hints[arg_name].__name__
             param_type = TYPE_MAP.get(type_raw, "string")
-            parameters[arg_name] = ParameterInfo(type=param_type)
+            max_tokens = 8 if arg_name in SHORT_PARAMS else 20
+            parameters[arg_name] = ParameterInfo(type=param_type, max_tokens=max_tokens)
 
     return FunctionInfo(
         name=name,

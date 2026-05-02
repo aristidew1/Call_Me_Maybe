@@ -1,0 +1,7 @@
+README.md
+pyproject.toml
+src/Call_me_maybe.egg-info/PKG-INFO
+src/Call_me_maybe.egg-info/SOURCES.txt
+src/Call_me_maybe.egg-info/dependency_links.txt
+src/Call_me_maybe.egg-info/requires.txt
+src/Call_me_maybe.egg-info/top_level.txt

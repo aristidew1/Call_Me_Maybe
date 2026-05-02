@@ -1,7 +1,7 @@
 """CLI entry point for Call Me Maybe function-calling pipeline."""
 
 import argparse
-from constrained import load_vocab
+from constrained import build_token_sets, load_vocab
 from pathlib import Path
 from loader import load_function_definitions, load_prompts
 from generator import generate
@@ -41,12 +41,12 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    # print(args)
     Path("data/output").mkdir(parents=True, exist_ok=True)
     prompts = load_prompts(args.input)
     functions = load_function_definitions(args.functions_definition)
     model = Small_LLM_Model()
     vocab = load_vocab(model.get_path_to_vocab_file())
+    token_sets = build_token_sets(vocab, functions)
     functions_call: list[FunctionCall] = []
     for p in prompts:
         functions_call.append(generate(
@@ -54,5 +54,6 @@ if __name__ == "__main__":
             function_defs=functions,
             model=model,
             vocab=vocab,
+            token_sets=token_sets,
         ))
     write_results(results=functions_call, output_path=args.output)

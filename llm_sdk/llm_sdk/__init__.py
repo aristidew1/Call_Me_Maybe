@@ -73,28 +73,13 @@ class Small_LLM_Model:
         for p in self._model.parameters():
             p.requires_grad = False
 
+        # KV cache state (opt-in, used by get_logits_incremental)
+        self._past_key_values = None
+        self._cached_ids: list[int] = []
+
 
     def encode(self, text: str) -> torch.Tensor:
         """Tokenise *text* and return a 2-D ``input_ids`` tensor on the target device."""
-        ids = self._tokenizer.encode(text, add_special_tokens=False)
-        return torch.tensor([ids], device=self._device, dtype=torch.long)
-
-
-    def encode_chat(self, messages: list[dict], enable_thinking: bool = False) -> torch.Tensor:
-        """Apply the tokenizer chat template and encode the resulting prompt."""
-        try:
-            text = self._tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=enable_thinking,
-            )
-        except TypeError:
-            text = self._tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
         ids = self._tokenizer.encode(text, add_special_tokens=False)
         return torch.tensor([ids], device=self._device, dtype=torch.long)
 
@@ -114,6 +99,49 @@ class Small_LLM_Model:
         with torch.no_grad():
             out = self._model(input_ids=input_tensor)
         # Get logits for the last token in the sequence for the batch (batch size 1)
+        logits = out.logits[0, -1].tolist()
+        return [float(x) for x in logits]
+
+
+    def reset_kv_cache(self) -> None:
+        """Drop the KV cache. Call when starting a new prompt sequence."""
+        self._past_key_values = None
+        self._cached_ids = []
+
+
+    def get_logits_incremental(self, input_ids: list[int]) -> list[float]:
+        """Return next-token logits, reusing a KV cache across calls.
+
+        Feeds only the new suffix since the previous call when ``input_ids``
+        extends the cached prefix; otherwise resets and runs a full forward
+        pass. Equivalent in output to :py:meth:`get_logits_from_input_ids`
+        but O(new_tokens) instead of O(seq_len) per step.
+        """
+        cached = self._cached_ids
+        prefix_match = (
+            self._past_key_values is not None
+            and len(input_ids) > len(cached)
+            and input_ids[: len(cached)] == cached
+        )
+
+        if prefix_match:
+            new_ids = input_ids[len(cached):]
+            past = self._past_key_values
+        else:
+            new_ids = input_ids
+            past = None
+
+        input_tensor = torch.tensor([new_ids], device=self._device, dtype=torch.long)
+        with torch.no_grad():
+            out = self._model(
+                input_ids=input_tensor,
+                past_key_values=past,
+                use_cache=True,
+            )
+
+        self._past_key_values = out.past_key_values
+        self._cached_ids = list(input_ids)
+
         logits = out.logits[0, -1].tolist()
         return [float(x) for x in logits]
 

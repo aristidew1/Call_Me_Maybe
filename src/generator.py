@@ -1,4 +1,5 @@
 import json
+import re
 
 import numpy as np
 
@@ -6,8 +7,9 @@ from llm_sdk import Small_LLM_Model  # type: ignore[attr-defined]
 from models import FunctionCall, FunctionDef
 from constrained import (
     State,
+    TokenSets,
+    build_token_sets,
     forbidden_ngram_ids,
-    get_valid_function_prefixes,
     get_valid_tokens,
     mask_logits,
     update_state,
@@ -27,32 +29,10 @@ def _build_messages(
         lines.append(desc)
     functions_desc = "\n".join(lines)
     system = (
-        "You are a function-calling assistant. "
-        "Given the user's request, select "
-        "exactly one function from the list below and fill in its arguments. "
-        "Respond with a single JSON object of the form "
-        '{"function": "<name>", '
-        '"arguments": {"<arg>": <value>, ...}} and nothing else.\n\n'
-        "Guidelines for regex arguments:\n"
-        "- To match all digits, ALWAYS use \\d+ (never list individual digits).\n"
-        "- To match a set of characters, ALWAYS use [...] syntax: "
-        "write [aeiouAEIOU] not aeiouAEIOU.\n"
-        '- To match a literal word like cat, just write "cat".\n'
-        "- Never repeat alternatives.\n\n"
-        "Examples:\n"
-        'Request: replace "cat" with "dog" in "the cat sat on the mat"\n'
-        'Response: {"function": "fn_substitute_string_with_regex", "arguments": '
-        '{"source_string": "the cat sat on the mat", '
-        '"regex": "cat", "replacement": "dog"}}\n'
-        'Request: replace all vowels in "Programming is fun" with "*"\n'
-        'Response: {"function": "fn_substitute_string_with_regex", "arguments": '
-        '{"source_string": "Programming is fun", "regex": "[aeiouAEIOU]", '
-        '"replacement": "*"}}\n'
-        'Request: replace all numbers in "Hello 34 I\'m 233 years old" with NUMBERS\n'
-        'Response: {"function": "fn_substitute_string_with_regex", "arguments": '
-        '{"source_string": "Hello 34 I\'m 233 years old", '
-        '"regex": "\\\\d+", "replacement": "NUMBERS"}}\n\n'
-        f"Available functions:\n{functions_desc}"
+        "Pick one function and fill its arguments. "
+        "Regex tips: match any digit with \\\\d+ (double backslash for JSON), "
+        "match a char set with [abc], literal text is just written as-is.\n"
+        f"Functions:\n{functions_desc}"
     )
     return [
         {"role": "system", "content": system},
@@ -60,17 +40,30 @@ def _build_messages(
     ]
 
 
+def _messages_to_prompt(messages: list[dict]) -> str:
+    """Flatten chat messages into a single prompt string."""
+    parts = []
+    for m in messages:
+        parts.append(f"<|{m['role']}|>\n{m['content']}")
+    parts.append("<|assistant|>\n")
+    return "\n".join(parts)
+
+
 def generate(
     model: Small_LLM_Model,
     prompt_text: str,
     function_defs: list[FunctionDef],
     vocab: dict[int, str],
+    token_sets: TokenSets | None = None,
     target_function: str | None = None,
     max_tokens: int = 200,
 ) -> FunctionCall:
     """Generate a function call using constrained decoding."""
-    valid_function_prefixes = get_valid_function_prefixes(function_defs)
-    function_names = {fn.name for fn in function_defs}
+    if token_sets is None:
+        token_sets = build_token_sets(vocab, function_defs)
+
+    # New prompt → fresh KV cache
+    model.reset_kv_cache()
 
     # If the function is already known (pass 2), find its definition upfront
     current_function: FunctionDef | None = None
@@ -81,7 +74,8 @@ def generate(
 
     # Encode the prompt with function-calling context
     messages = _build_messages(prompt_text, function_defs)
-    input_ids: list[int] = model.encode_chat(messages)[0].tolist()
+    prompt = _messages_to_prompt(messages)
+    input_ids: list[int] = model.encode(prompt)[0].tolist()
 
     # Track FSM state and generated JSON
     state = State.START
@@ -99,12 +93,17 @@ def generate(
         State.KEY_ARGUMENTS: '"arguments":',
     }
 
+    # States where output is fully determined by the FSM, so we can pick the
+    # longest valid token directly and skip the (expensive) model forward pass.
+    _DETERMINISTIC_STATES = {
+        State.START, State.OPEN_BRACE, State.KEY_FUNCTION, State.COLON,
+        State.COMMA, State.KEY_ARGUMENTS, State.OPEN_ARGS, State.ARG_KEY,
+        State.ARG_COLON, State.ARG_COMMA, State.CLOSE_ARGS, State.CLOSE_BRACE,
+    }
+
     for _ in range(max_tokens):
         if state == State.END:
             break
-
-        # Ask the model for the next token scores
-        logits = model.get_logits_from_input_ids(input_ids)
 
         # Compute remaining fixed string for multi-token fixed states
         if state in _FIXED_STRINGS:
@@ -113,37 +112,47 @@ def generate(
             remaining_fixed = ""
 
         # Keep only the tokens allowed by the current FSM state
+        max_value_tokens = (
+            current_function.parameters[remaining_params[0]].max_tokens
+            if current_function and remaining_params
+            else 20
+        )
         valid_ids = get_valid_tokens(
             state,
-            vocab,
-            valid_function_prefixes,
+            token_sets,
             current_function,
             remaining_params,
             accumulated_function_name,
-            function_names,
             remaining_fixed,
             string_phase,
             accumulated_arg_key,
             value_token_count,
+            max_value_tokens,
+            value_token_ids,
+            vocab,
         )
 
-        # No-repeat 3-gram on string arg values to avoid greedy decoding loops
-        if state == State.ARG_VALUE and current_function and remaining_params:
-            param_type = current_function.parameters[remaining_params[0]].type
-            if param_type == "string":
+        if state in _DETERMINISTIC_STATES and valid_ids:
+            # Skip the model: pick the longest valid token to advance fastest.
+            next_token_id = max(valid_ids, key=lambda tid: len(vocab[tid]))
+        else:
+            logits = model.get_logits_incremental(input_ids)
+
+            # No-repeat 3-gram on string values to avoid greedy decoding loops
+            if (
+                state == State.ARG_VALUE
+                and current_function and remaining_params
+                and current_function.parameters[remaining_params[0]].type == "string"
+            ):
                 forbidden = forbidden_ngram_ids(value_token_ids, n=3)
                 if forbidden:
-                    filtered = [
-                        tid for tid in valid_ids
-                        if tid not in forbidden
-                    ]
+                    filtered = [tid for tid in valid_ids if tid not in forbidden]
                     if filtered:
                         valid_ids = filtered
 
-        logits = mask_logits(logits, valid_ids)
+            logits = mask_logits(logits, valid_ids)
+            next_token_id = int(np.argmax(logits))
 
-        # Greedy decoding: pick the token with the highest score
-        next_token_id = int(np.argmax(logits))
         next_token_str = vocab[next_token_id]
 
         input_ids.append(next_token_id)
@@ -214,8 +223,43 @@ def generate(
     generated_json = model.decode(generated_ids)
     data = json.loads(generated_json)
 
+    arguments = _post_process_arguments(data["arguments"], prompt_text)
+
     return FunctionCall(
         prompt=prompt_text,
         name=data["function"],
-        parameters=data["arguments"],
+        parameters=arguments,
     )
+
+
+_WORD_PROMPT_RE = re.compile(
+    r"\bword\s+['\"]([^'\"\n]+)['\"]",
+    re.IGNORECASE,
+)
+
+
+def _post_process_arguments(args: dict, prompt_text: str) -> dict:
+    """Heuristic fixes the greedy decoder cannot get right on its own.
+
+    1. ``replacement``: collapse "**" / "---" / "===" (single char repeated)
+       to one char. Greedy BPE often picks these as a multi-char token even
+       when the user asked for an "asterisk" / "dash" / etc.
+    2. ``regex``: when the user prompt mentions a quoted word ("substitute
+       the word 'cat'"), force word-boundary anchoring `\\bX\\b` so the
+       pattern doesn't match substrings.
+    """
+    fixed = dict(args)
+
+    repl = fixed.get("replacement")
+    if isinstance(repl, str) and len(repl) >= 2 and len(set(repl)) == 1:
+        fixed["replacement"] = repl[0]
+
+    rgx = fixed.get("regex")
+    if isinstance(rgx, str):
+        match = _WORD_PROMPT_RE.search(prompt_text)
+        if match:
+            target = re.escape(match.group(1))
+            if not rgx.startswith("\\b"):
+                fixed["regex"] = f"\\b{target}\\b"
+
+    return fixed
