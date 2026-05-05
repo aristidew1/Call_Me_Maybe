@@ -5,7 +5,7 @@ from pydantic import BaseModel
 class ParameterDef(BaseModel):
     """Definition of a parameter or return type of a function."""
 
-    type: Literal["number", "string", "boolean"]
+    type: Literal["number", "string", "boolean", "integer"]
     max_tokens: int = 20
 
 
@@ -29,4 +29,4 @@ class FunctionCall(BaseModel):
 
     prompt: str
     name: str
-    parameters: dict[str, float | str | bool]
+    parameters: dict[str, int | float | str | bool]

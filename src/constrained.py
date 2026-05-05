@@ -131,7 +131,6 @@ def build_token_sets(
         if tok
         and all(32 <= ord(c) <= 126 for c in tok.replace("Ġ", " "))
         and (tok == '"' or '"' not in tok)
-        and "," not in tok and "}" not in tok and "{" not in tok
     ]
     # Single-character-only variant for the `replacement` param: forces
     # char-by-char generation to avoid multi-char BPE tokens like "*uc"
@@ -141,7 +140,7 @@ def build_token_sets(
         tid for tid, tok in vocab.items()
         if tok and len(tok.replace("Ġ", " ")) == 1
         and 32 <= ord(tok.replace("Ġ", " ")) <= 126
-        and tok not in {'"', ",", "}", "{", "\\"}
+        and tok not in {'"', "\\"}
     ]
 
     # --- Function-value sets ----------------------------------------------
@@ -183,6 +182,7 @@ def update_state(
     remaining_params: list[str],
     accumulated_fixed: str = "",
     accumulated_arg_key: str = "",
+    string_phase: int = 0,
 ) -> State:
     """Return the next FSM state after generating a token."""
     match state:
@@ -216,6 +216,9 @@ def update_state(
         case State.ARG_COLON:
             return State.ARG_VALUE
         case State.ARG_VALUE:
+            # Don't transition on , or } while inside an open string literal
+            if string_phase == 1:
+                return State.ARG_VALUE
             if token == ',':
                 return State.ARG_KEY
             if token == '}':
@@ -319,7 +322,7 @@ def get_valid_tokens(
                     return token_sets.closing_quote
                 return token_sets.delimiter_brace if is_last else token_sets.delimiter_comma
 
-            if param_type == "number":
+            if param_type in ("number", "integer"):
                 return token_sets.number_brace if is_last else token_sets.number_comma
             if param_type == "boolean":
                 return token_sets.bool_brace if is_last else token_sets.bool_comma
@@ -338,6 +341,12 @@ def get_valid_tokens(
                         and is_regex_complete(value_token_ids, vocab)
                     ):
                         return token_sets.closing_quote
+                    # Forbid leading whitespace right after the opening quote
+                    if value_token_count == 1 and vocab is not None:
+                        return [
+                            tid for tid in token_sets.string_inside
+                            if not vocab[tid].startswith(("Ġ", " "))
+                        ]
                     return token_sets.string_inside
                 # phase 2: string is closed, only the delimiter is valid
                 return token_sets.delimiter_brace if is_last else token_sets.delimiter_comma

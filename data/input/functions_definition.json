@@ -69,11 +69,11 @@
       },
       "regex": {
         "type": "string",
-        "max_tokens": 16
+        "max_tokens": 8
       },
       "replacement": {
         "type": "string",
-        "max_tokens": 12
+        "max_tokens": 8
       }
     },
     "returns": {

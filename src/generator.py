@@ -189,6 +189,7 @@ def generate(
         state = update_state(
             state, next_token_str, remaining_params,
             accumulated_fixed, accumulated_arg_key,
+            string_phase,
         )
 
         # Reset fixed accumulator on state change
@@ -223,7 +224,9 @@ def generate(
     generated_json = model.decode(generated_ids)
     data = json.loads(generated_json)
 
-    arguments = _post_process_arguments(data["arguments"], prompt_text)
+    arguments = _post_process_arguments(
+        data["arguments"], prompt_text, current_function
+    )
 
     return FunctionCall(
         prompt=prompt_text,
@@ -238,7 +241,9 @@ _WORD_PROMPT_RE = re.compile(
 )
 
 
-def _post_process_arguments(args: dict, prompt_text: str) -> dict:
+def _post_process_arguments(
+    args: dict, prompt_text: str, function_def: FunctionDef | None = None
+) -> dict:
     """Heuristic fixes the greedy decoder cannot get right on its own.
 
     1. ``replacement``: collapse "**" / "---" / "===" (single char repeated)
@@ -249,6 +254,15 @@ def _post_process_arguments(args: dict, prompt_text: str) -> dict:
        pattern doesn't match substrings.
     """
     fixed = dict(args)
+
+    if function_def is not None:
+        for pname, pdef in function_def.parameters.items():
+            if pname not in fixed:
+                continue
+            if pdef.type == "integer":
+                fixed[pname] = int(fixed[pname])
+            elif pdef.type == "number":
+                fixed[pname] = float(fixed[pname])
 
     repl = fixed.get("replacement")
     if isinstance(repl, str) and len(repl) >= 2 and len(set(repl)) == 1:
@@ -261,5 +275,23 @@ def _post_process_arguments(args: dict, prompt_text: str) -> dict:
             target = re.escape(match.group(1))
             if not rgx.startswith("\\b"):
                 fixed["regex"] = f"\\b{target}\\b"
+
+    # `query`: extract the single-quoted SQL from the prompt verbatim.
+    if isinstance(fixed.get("query"), str):
+        m = re.search(r"'([^']*)'", prompt_text)
+        if m:
+            fixed["query"] = m.group(1)
+
+    # `path`: extract a Unix or Windows file path from the prompt.
+    if isinstance(fixed.get("path"), str):
+        m = re.search(r"(?:[A-Za-z]:[\\/]|[/\\])\S+", prompt_text)
+        if m:
+            fixed["path"] = m.group(0)
+
+    # `template`: extract everything after "Format template:" verbatim.
+    if isinstance(fixed.get("template"), str):
+        m = re.search(r"[Ff]ormat template:\s*(.+?)\s*$", prompt_text)
+        if m:
+            fixed["template"] = m.group(1)
 
     return fixed
