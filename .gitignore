@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+uv.lock
+
+# mypy
+.mypy_cache/
+*.pyi
+
+# flake8
+.flake8
+
+# Type stubs
+py.typed
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests / coverage
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Data / outputs
+data/correction/
+*.json

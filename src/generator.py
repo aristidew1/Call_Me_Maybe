@@ -18,7 +18,7 @@ from constrained import (
 
 def _build_messages(
     user_prompt: str, function_defs: list[FunctionDef]
-) -> list[dict]:
+) -> list[dict[str, str]]:
     """Build chat messages that give the model the function-calling context."""
     lines = []
     for fn in function_defs:
@@ -40,7 +40,7 @@ def _build_messages(
     ]
 
 
-def _messages_to_prompt(messages: list[dict]) -> str:
+def _messages_to_prompt(messages: list[dict[str, str]]) -> str:
     """Flatten chat messages into a single prompt string."""
     parts = []
     for m in messages:
@@ -142,11 +142,15 @@ def generate(
             if (
                 state == State.ARG_VALUE
                 and current_function and remaining_params
-                and current_function.parameters[remaining_params[0]].type == "string"
+                and current_function.parameters[
+                    remaining_params[0]
+                ].type == "string"
             ):
                 forbidden = forbidden_ngram_ids(value_token_ids, n=3)
                 if forbidden:
-                    filtered = [tid for tid in valid_ids if tid not in forbidden]
+                    filtered = [
+                        tid for tid in valid_ids if tid not in forbidden
+                    ]
                     if filtered:
                         valid_ids = filtered
 
@@ -242,8 +246,10 @@ _WORD_PROMPT_RE = re.compile(
 
 
 def _post_process_arguments(
-    args: dict, prompt_text: str, function_def: FunctionDef | None = None
-) -> dict:
+    args: dict[str, int | float | str | bool],
+    prompt_text: str,
+    function_def: FunctionDef | None = None,
+) -> dict[str, int | float | str | bool]:
     """Heuristic fixes the greedy decoder cannot get right on its own.
 
     1. ``replacement``: collapse "**" / "---" / "===" (single char repeated)

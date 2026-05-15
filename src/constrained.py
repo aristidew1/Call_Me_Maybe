@@ -58,11 +58,11 @@ class TokenSets:
 
     # String value tokens for the "inside string" phase (printable chars + '"')
     string_inside: list[int]
-    # Single-character variant of string_inside, used for short-budget params
-    # (e.g. `replacement`) to avoid multi-char BPE tokens like "*uc".
+    # Single-character variant of string_inside, used for short-budget
+    # params (e.g. `replacement`) to avoid multi-char BPE tokens like "*uc".
     string_inside_single: list[int]
 
-    # Single-delimiter sets, used to force-close a value when max tokens reached
+    # Single-delimiter sets, used to force-close a value at max tokens
     delimiter_comma: list[int]
     delimiter_brace: list[int]
     closing_quote: list[int]
@@ -106,9 +106,9 @@ def build_token_sets(
     }
 
     # --- Delimiter / quote sets -------------------------------------------
-    comma_tids  = [tid for tid, tok in vocab.items() if tok == ","]
-    brace_tids  = [tid for tid, tok in vocab.items() if tok == "}"]
-    quote_tids  = [tid for tid, tok in vocab.items() if tok == '"']
+    comma_tids = [tid for tid, tok in vocab.items() if tok == ","]
+    brace_tids = [tid for tid, tok in vocab.items() if tok == "}"]
+    quote_tids = [tid for tid, tok in vocab.items() if tok == '"']
 
     # --- Number value sets ------------------------------------------------
     number_chars = set("0123456789.-eE")
@@ -120,7 +120,10 @@ def build_token_sets(
     number_brace = number_tids + brace_tids
 
     # --- Boolean value sets -----------------------------------------------
-    bool_prefixes = {"t", "tr", "tru", "true", "f", "fa", "fal", "fals", "false"}
+    bool_prefixes = {
+        "t", "tr", "tru", "true",
+        "f", "fa", "fal", "fals", "false",
+    }
     bool_tids = [tid for tid, tok in vocab.items() if tok in bool_prefixes]
     bool_comma = bool_tids + comma_tids
     bool_brace = bool_tids + brace_tids
@@ -320,12 +323,21 @@ def get_valid_tokens(
             if value_token_count >= max_value_tokens:
                 if param_type == "string" and string_phase == 1:
                     return token_sets.closing_quote
-                return token_sets.delimiter_brace if is_last else token_sets.delimiter_comma
+                return (
+                    token_sets.delimiter_brace if is_last
+                    else token_sets.delimiter_comma
+                )
 
             if param_type in ("number", "integer"):
-                return token_sets.number_brace if is_last else token_sets.number_comma
+                return (
+                    token_sets.number_brace if is_last
+                    else token_sets.number_comma
+                )
             if param_type == "boolean":
-                return token_sets.bool_brace if is_last else token_sets.bool_comma
+                return (
+                    token_sets.bool_brace if is_last
+                    else token_sets.bool_comma
+                )
             if param_type == "string":
                 if string_phase == 0:
                     return token_sets.fixed['"']
@@ -349,7 +361,10 @@ def get_valid_tokens(
                         ]
                     return token_sets.string_inside
                 # phase 2: string is closed, only the delimiter is valid
-                return token_sets.delimiter_brace if is_last else token_sets.delimiter_comma
+                return (
+                    token_sets.delimiter_brace if is_last
+                    else token_sets.delimiter_comma
+                )
             return []
 
         case State.ARG_COMMA:

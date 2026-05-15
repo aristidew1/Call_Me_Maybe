@@ -22,4 +22,4 @@ lint:
 
 lint-strict:
 		python3 -m flake8 $(SRC)
-		metpython3 -m mypy $(SRC) --strict
+		python3 -m mypy $(SRC) --strict

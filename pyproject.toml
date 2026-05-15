@@ -26,3 +26,7 @@ dev = [
     "flake8>=7.3.0",
     "mypy>=1.20.2",
 ]
+
+[tool.mypy]
+mypy_path = "src"
+explicit_package_bases = true

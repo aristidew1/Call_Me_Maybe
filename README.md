@@ -44,6 +44,7 @@ make run ARGS="--input my_prompts.json"   # custom input
 make debug                                # run with -Wall
 make clean                                # purge caches
 make lint                                 # flake8 + mypy
+make lint-strict                          # flake8 + mypy --strict
 ```
 
 ### Output schema
@@ -90,13 +91,13 @@ This is the only place the model is constrained — there is no post-hoc parsing
 
 Inside `ARG_VALUE`, the FSM uses the parameter's type from the Pydantic `FunctionDef`:
 
-| type      | allowed tokens                                 |
-| --------- | ---------------------------------------------- |
-| `number`  | digits, `.`, `-`, `e`, plus the next delimiter |
-| `boolean` | prefixes of `true` / `false` + delimiter       |
-| `string`  | printable ASCII inside `"…"`, then delimiter   |
+| type                  | allowed tokens                                 |
+| --------------------- | ---------------------------------------------- |
+| `number` / `integer`  | digits, `.`, `-`, `e`, plus the next delimiter |
+| `boolean`             | prefixes of `true` / `false` + delimiter       |
+| `string`              | printable ASCII inside `"…"`, then delimiter   |
 
-A 3-gram no-repeat filter is applied on string values to prevent greedy-decoding loops, and a regex-completion heuristic forces the closing quote after a terminal regex char (`+ * ? ] )`) so the decoder can't extend an already-valid pattern.
+A 3-gram no-repeat filter is applied on string values to prevent greedy-decoding loops, and a regex-completion heuristic forces the closing quote after a terminal regex char (`+ * ? ] ) $`) so the decoder can't extend an already-valid pattern.
 
 ### 4. Function-name lookup
 
@@ -139,7 +140,7 @@ Call_Me_Maybe/
 ## Challenges encountered
 
 - **Multi-character BPE tokens hijacking string values.** The greedy decoder would emit tokens like `*uc` mid-string for short replacement values. Fixed by a single-character variant of the string-inside set when the parameter has a tight token budget.
-- **Greedy regex extension.** A valid pattern like `\d+` would be extended into `\d+\d+$` by the greedy argmax. Fixed by `is_regex_complete`: after a terminal regex char (`+ * ? ] )`) the FSM forces the closing quote.
+- **Greedy regex extension.** A valid pattern like `\d+` would be extended into `\d+\d+$` by the greedy argmax. Fixed by `is_regex_complete`: after a terminal regex char (`+ * ? ] ) $`) the FSM forces the closing quote.
 - **Function-name multi-token resolution.** Token boundaries don't align with function names. Fixed by pre-computing, for every prefix of every name, the tokens that legally extend it (or close with `"`).
 - **String repetition loops.** Greedy decoding on long string args occasionally looped. Fixed with a 3-gram no-repeat filter on `value_token_ids`.
 
