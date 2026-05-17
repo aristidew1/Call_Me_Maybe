@@ -1,3 +1,6 @@
+**This project has been created as part
+of the 42 curriculum by arvella.**
+
 # Call Me Maybe
 
 Translate natural-language prompts into structured function calls using `Qwen/Qwen3-0.6B` and **constrained decoding** built from scratch (no `outlines`, `transformers`, `dspy`, etc.).

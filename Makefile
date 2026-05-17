@@ -1,14 +1,17 @@
 SRC = src
 
-.PHONY: install run debug clean lint lint-strict
+.PHONY: install run debug clean lint lint-strict check-uv
 
-install:
+check-uv:
+	@which uv > /dev/null 2>&1 || (echo "Error: 'uv' is not installed." && echo "Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh" && echo "Or on Windows: powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\"" && exit 1)
+
+install: check-uv
 	uv sync
 
-run:
+run: check-uv
 	uv run python -m src $(ARGS)
 
-debug:
+debug: check-uv
 	uv run python -Wall -m src $(ARGS)
 
 clean:
