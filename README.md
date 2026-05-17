@@ -132,7 +132,7 @@ Call_Me_Maybe/
 - **Pure FSM, no parser combinators.** The output JSON has a fixed shape, so a hand-written FSM with ~15 states is simpler and faster than a generic JSON-grammar engine.
 - **Pre-computed token sets.** Every set the FSM might need (delimiters, number tokens, boolean prefixes, string-inside chars, every prefix of every function name) is built once in `build_token_sets` and looked up by reference. No vocabulary scan per token.
 - **Single greedy pass, no retry.** Because masking guarantees validity, there is no JSON-repair fallback — `json.loads` on the final output always succeeds.
-- **Public SDK methods only.** The pipeline uses `encode_chat`, `get_logits_from_input_ids`, `decode`, `get_path_to_vocab_file`, and `reset_kv_cache`. No private attributes are accessed.
+- **Public SDK methods only.** The pipeline uses `encode`, `get_logits_incremental`, `decode`, `get_path_to_vocab_file`, and `reset_kv_cache`. `get_logits_incremental` was added to the provided SDK to enable KV-cache reuse. Chat formatting is handled by a local `_messages_to_prompt` helper. No private attributes are accessed.
 - **KV-cache reuse.** `model.reset_kv_cache()` is called once per prompt; within a generation the SDK reuses cached attention states.
 
 ---
