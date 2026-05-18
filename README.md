@@ -1,5 +1,4 @@
-**This project has been created as part
-of the 42 curriculum by arvella.**
+**This project has been created as part of the 42 curriculum by arvella.**
 
 # Call Me Maybe
 
@@ -164,27 +163,9 @@ Optimizations:
 
 ---
 
-## Testing
-
-```bash
-# End-to-end on the provided test set
-make run
-
-# Moulinette evaluation (from the moulinette/ folder)
-cd moulinette
-uv sync
-uv run python -m moulinette prepare_exercises --set private
-uv run python -m moulinette grade_student_answers \
-    --student_answer_path ../data/output/function_calls.json --set private
-```
-
-The grader checks: prompt match, function-name validity, argument types, and the actual function output against the expected output.
-
----
-
 ## Resources
 
-- Subject: [subject.md](subject.md)
+- Subject: [subject.pdf](<https://cdn.intra.42.fr/pdf/pdf/203959/en.subject.pdf>)
 - Qwen3-0.6B model card: <https://huggingface.co/Qwen/Qwen3-0.6B>
 - Constrained decoding background: the approach used here (FSM + logit masking) is a hand-rolled version of what libraries like `outlines` or `lm-format-enforcer` do under the hood.
 
