@@ -15,9 +15,6 @@ build/
 venv/
 env/
 
-# uv
-uv.lock
-
 # mypy
 .mypy_cache/
 *.pyi
